@@ -12,13 +12,15 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
         public FileInfo GameRom { get; set; }
         public bool FullScreen { get; set; }
         public ControllerType Controller { get; set; }
+        public int EmulatorCount { get; set; } = 1;
 
         public static EmulatorClientOptions Default 
         { 
             get => new() {
                 Magnification = EmulatorClient.DEFAULT_MAGNIFICATION,
                 FullScreen = false,
-                Controller = ControllerType.Keyboard
+                Controller = ControllerType.Keyboard,
+                EmulatorCount = 1,
             };
         }
     }

@@ -39,6 +39,19 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
                 )
             );
 
+            Option<int> countOption = new Option<int>("--emulatorcount", "Number of running isntance");
+            countOption.AddAlias("-e");
+            countOption.AddValidator(option =>
+            {
+                if (option.Token == null) return null;
+                if (!Int32.TryParse(option.Tokens[0].Value, out int value) || value <= 0 || value > 4)
+                    return "Emulator count must be an integer value between 1 and 4";
+                return null;
+            });
+            countOption.SetDefaultValue(1);
+            countOption.IsRequired = true;
+            rootCommand.AddOption(countOption);
+
             Option<int> magnificationOption = new Option<int>("--magnification", "Magnification of screen");
             magnificationOption.AddAlias("-m");
             magnificationOption.AddValidator(option =>

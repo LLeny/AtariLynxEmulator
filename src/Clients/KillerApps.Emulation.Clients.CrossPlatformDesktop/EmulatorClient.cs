@@ -7,7 +7,9 @@ using Microsoft.Xna.Framework.Input;
 using KillerApps.Emulation.AtariLynx;
 using KillerApps.Gaming.MonoGame;
 using System.IO;
+using System.Linq;
 using Microsoft.Xna.Framework.Audio;
+using KillerApps.Emulation.Clients.CrossPlatformDesktop.Network;
 
 namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
 {
@@ -17,13 +19,13 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
     public class EmulatorClient : Game
     {
         // Emulator 
-        private LynxHandheld emulator;
+        private List<LynxHandheld> emulators = new();
         private ContentManager romContent;
 
         // Video
         private GraphicsDeviceManager graphics;
         private SpriteBatch spriteBatch;
-        private Texture2D lcdScreen;
+        private List<Texture2D> lcdScreens = new();
         private int graphicsWidth;
         private int graphicsHeight;
 
@@ -33,18 +35,18 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
         private readonly EmulatorClientOptions clientOptions;
 
         // Input
-        private InputHandler inputHandler;
+        private List<InputHandler> inputHandlers = new();
 
         // Audio
         private byte[] soundBuffer;
         private DynamicSoundEffectInstance dynamicSound;
 
-        // Network
-        private IComLynxTransport transport = new SerialPortComLynxTransport();
-
         public EmulatorClient(EmulatorClientOptions options = null) : base()
         {
-            emulator = new LynxHandheld();
+            for(int i=0; i<options.EmulatorCount; ++i)
+            {
+                emulators.Add(new LynxHandheld());
+            }
             graphics = new GraphicsDeviceManager(this);
             romContent = new ResourceContentManager(Services, Roms.ResourceManager);
 
@@ -71,13 +73,20 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
             InitializeEmulator(clientOptions.BootRom, clientOptions.GameRom);
             InitializeAudio();
 
-            inputHandler = clientOptions.Controller switch
+            for(int i=0; i<clientOptions.EmulatorCount; ++i)
             {
-                ControllerType.Gamepad => new GamePadHandler(this),
-                ControllerType.Keyboard => new KeyboardHandler(this),
-                _ => throw new NotImplementedException()
-            };
-            Components.Add(inputHandler);
+                InputHandler handler = clientOptions.Controller switch
+                {
+                    ControllerType.Gamepad => new GamePadHandler(this),
+                    ControllerType.Keyboard => i % 2 == 0 ? new Keyboard1Handler(this) : new Keyboard2Handler(this),
+                    _ => throw new NotImplementedException()
+                };
+
+                inputHandlers.Add(handler);                    
+                Components.Add(handler);
+            }
+
+            InitializeSerial();
 
             base.Initialize();
         }
@@ -105,22 +114,28 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
         {
             // Lynx related
             Stream bootRomImage = bootRomFileInfo?.OpenRead();
-            emulator.BootRomImage = bootRomImage ?? (Stream)(new MemoryStream(Roms.LYNXBOOT));
-            emulator.InsertCartridge(LoadCartridge(gameRomFileInfo));
-            emulator.Initialize();
-            
-            emulator.Reset();
+
+            emulators.ForEach(emulator => 
+            {
+                emulator.BootRomImage = bootRomImage ?? (Stream)(new MemoryStream(Roms.LYNXBOOT));
+                emulator.InsertCartridge(LoadCartridge(gameRomFileInfo));
+                emulator.Initialize();                
+                emulator.Reset();
+            });
         }
 
         private void InitializeVideo(bool fullScreen)
         {
             // Set video options
-            graphics.PreferredBackBufferWidth = graphicsWidth;
+            graphics.PreferredBackBufferWidth = graphicsWidth*clientOptions.EmulatorCount;
             graphics.PreferredBackBufferHeight = graphicsHeight;
-            graphics.IsFullScreen = fullScreen;
+            graphics.IsFullScreen = false;
             graphics.ApplyChanges();
 
-            lcdScreen = new Texture2D(graphics.GraphicsDevice, Suzy.SCREEN_WIDTH, Suzy.SCREEN_HEIGHT, false, SurfaceFormat.Color);
+            for(int i=0; i<clientOptions.EmulatorCount; ++i)
+            {
+                lcdScreens.Add(new Texture2D(graphics.GraphicsDevice, Suzy.SCREEN_WIDTH, Suzy.SCREEN_HEIGHT, false, SurfaceFormat.Color));
+            }
             spriteBatch = new SpriteBatch(GraphicsDevice);
         }
 
@@ -129,8 +144,21 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
             dynamicSound = new DynamicSoundEffectInstance(22050, AudioChannels.Mono);
             soundBuffer = new byte[dynamicSound.GetSampleSizeInBytes(TimeSpan.FromMilliseconds(250))];
             //dynamicSound.BufferNeeded += new EventHandler<EventArgs>(DynamicSoundBufferNeeded);
-            emulator.Mikey.AudioFilter.BufferReady += new EventHandler<BufferEventArgs>(OnAudioFilterBufferReady);
+            emulators[0].Mikey.AudioFilter.BufferReady += new EventHandler<BufferEventArgs>(OnAudioFilterBufferReady);
             dynamicSound.Play();
+        }
+
+        private void InitializeSerial()
+        {
+            if(emulators.Count > 1)
+            {
+                emulators[0].InsertComLynxCable(new ZMQComLynxHostTransport("inproc://comlynx.publisher", "inproc://comlynx.subscriber"));
+
+                foreach(var emulator in emulators.Skip(1))
+                {
+                    emulator.InsertComLynxCable(new ZMQComLynxClientTransport("inproc://comlynx.publisher", "inproc://comlynx.subscriber"));
+                } 
+            }          
         }
 
         void OnAudioFilterBufferReady(object sender, BufferEventArgs e)
@@ -142,7 +170,7 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
 
         private void DynamicSoundBufferNeeded(object sender, EventArgs e)
         {
-            byte[] buffer = emulator.Mikey.AudioFilter.Buffer;
+            byte[] buffer = emulators[0].Mikey.AudioFilter.Buffer;
             dynamicSound.SubmitBuffer(buffer, 0, buffer.Length / 2);
             dynamicSound.SubmitBuffer(buffer, buffer.Length / 2, buffer.Length / 2);
         }
@@ -173,14 +201,22 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Update(GameTime gameTime)
         {
-            if (inputHandler.ExitGame == true)
+            if (inputHandlers.Any(ih => ih.ExitGame))
                 this.Exit();
 
-            inputHandler.Update(gameTime);
+            for(int i=0; i< clientOptions.EmulatorCount; ++i)
+            {
+                inputHandlers[i].Update(gameTime);
+                JoystickStates joystick = inputHandlers[i].Joystick;
+                emulators[i].UpdateJoystickState(joystick);
+            }
 
-            JoystickStates joystick = inputHandler.Joystick;
-            emulator.UpdateJoystickState(joystick);
-            emulator.Update(86667); // 4 MHz worth of cycles divided by 60 seconds
+            int cycle_divisor = 100;
+
+            for(int i=0; i<86667/cycle_divisor; ++i)// 4 MHz worth of cycles divided by 60 seconds
+            {
+                emulators.ForEach(e => e.Update((ulong)cycle_divisor));
+            }
 
             base.Update(gameTime);
         }
@@ -191,13 +227,17 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Draw(GameTime gameTime)
         {
-            lcdScreen.SetData(emulator.LcdScreenDma, 0x0, 0x3FC0);
-
             spriteBatch.Begin(SpriteSortMode.Deferred, null, SamplerState.PointClamp, null, null);
-            spriteBatch.Draw(lcdScreen,
-                new Rectangle(0, 0, graphicsWidth, graphicsHeight),
-                new Rectangle(0, 0, Suzy.SCREEN_WIDTH, Suzy.SCREEN_HEIGHT),
-                Color.White);
+
+            for(int i=0; i<clientOptions.EmulatorCount; ++i)
+            {
+                lcdScreens[i].SetData(emulators[i].LcdScreenDma, 0, 0x3FC0);
+
+                spriteBatch.Draw(lcdScreens[i],
+                    new Rectangle(graphicsWidth*i, 0, graphicsWidth, graphicsHeight),
+                    new Rectangle(0, 0, Suzy.SCREEN_WIDTH, Suzy.SCREEN_HEIGHT), Color.White);
+            }
+
             spriteBatch.End();
 
             base.Draw(gameTime);
