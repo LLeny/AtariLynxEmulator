@@ -8,6 +8,7 @@ using KillerApps.Emulation.AtariLynx;
 using KillerApps.Gaming.MonoGame;
 using System.IO;
 using Microsoft.Xna.Framework.Audio;
+using KillerApps.Emulation.Clients.CrossPlatformDesktop.Network;
 
 namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
 {
@@ -65,11 +66,12 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
             Window.Title = "Atari Lynx Emulator";
             Window.AllowUserResizing = false;
             IsFixedTimeStep = true;
-            TargetElapsedTime = TimeSpan.FromMilliseconds(6); // 60Hz
+            TargetElapsedTime = TimeSpan.FromTicks(75); 
 
             InitializeVideo(clientOptions.FullScreen);
             InitializeEmulator(clientOptions.BootRom, clientOptions.GameRom);
             InitializeAudio();
+            InitializeNetwork();
 
             inputHandler = clientOptions.Controller switch
             {
@@ -110,6 +112,18 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
             emulator.Initialize();
             
             emulator.Reset();
+        }
+
+        private void InitializeNetwork()
+        {
+            if(clientOptions.ComLynxHost)
+            {
+                emulator.InsertComLynxCable(new ZMQComLynxHostTransport(clientOptions.ComLynxPublisher, clientOptions.ComLynxSubscriber));
+            }
+            else if(clientOptions.ComLynxClient)
+            {
+                emulator.InsertComLynxCable(new ZMQComLynxClientTransport(clientOptions.ComLynxPublisher, clientOptions.ComLynxSubscriber));
+            }
         }
 
         private void InitializeVideo(bool fullScreen)
@@ -180,7 +194,7 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
 
             JoystickStates joystick = inputHandler.Joystick;
             emulator.UpdateJoystickState(joystick);
-            emulator.Update(86667); // 4 MHz worth of cycles divided by 60 seconds
+            emulator.Update(100); // 4 MHz worth of cycles divided by 60 seconds
 
             base.Update(gameTime);
         }
@@ -205,6 +219,8 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
 
         protected override void OnExiting(object sender, EventArgs args)
         {
+            //Stop Network
+            emulator.RemoveComLynxCable();
             // Stop sound before exiting
             //if (dynamicSound.State != SoundState.Stopped) dynamicSound.Stop(true);
             base.OnExiting(sender, args);

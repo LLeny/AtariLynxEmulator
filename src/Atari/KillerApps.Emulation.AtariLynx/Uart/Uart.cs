@@ -49,6 +49,11 @@ namespace KillerApps.Emulation.AtariLynx
 			transport.Initialize();
 		}
 
+		public void RemoveCable()
+		{
+			transport?.Dispose();
+		}
+
 		protected virtual void OnBaudPulse()
 		{
 			if (BaudPulse != null) BaudPulse(this, EventArgs.Empty);

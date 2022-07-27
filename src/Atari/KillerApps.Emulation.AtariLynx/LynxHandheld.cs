@@ -119,5 +119,10 @@ namespace KillerApps.Emulation.AtariLynx
 		{
 			this.Mikey.ComLynx.InsertCable(transport);
 		}
+
+		public void RemoveComLynxCable()
+		{
+			this.Mikey.ComLynx.RemoveCable();
+		}
 	}
 }

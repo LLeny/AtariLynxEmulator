@@ -39,6 +39,12 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
                 )
             );
 
+            //Network
+            rootCommand.AddOption(new Option<bool>(new[] { "--comlynxhost", "-h" }, () => false, "Host a ComLynx server"));
+            rootCommand.AddOption(new Option<bool>(new[] { "--comlynxclient", "-j" }, () => false, "Join a ComLynx server"));
+            rootCommand.AddOption(new Option<string>(new[] { "--comlynxsubscriber", "-s" }, () => "tcp://127.0.0.1:5678", "ComLynx subscriber address"));
+            rootCommand.AddOption(new Option<string>(new[] { "--comlynxpublisher", "-p" }, () => "tcp://127.0.0.1:1234", "ComLynx publisher address"));
+
             Option<int> magnificationOption = new Option<int>("--magnification", "Magnification of screen");
             magnificationOption.AddAlias("-m");
             magnificationOption.AddValidator(option =>

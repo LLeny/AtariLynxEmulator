@@ -5,7 +5,7 @@ using System.Text;
 
 namespace KillerApps.Emulation.AtariLynx
 {
-	public interface IComLynxTransport
+	public interface IComLynxTransport : IDisposable
 	{
 		void Connect(Transmitter transmitter, Receiver receiver);
 		void Initialize();

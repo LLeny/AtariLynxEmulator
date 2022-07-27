@@ -78,5 +78,10 @@ namespace KillerApps.Emulation.Clients.CrossPlatformDesktop
 			// When data has arrived through serial port, it is available immediately
 			receiver.ReceiveData(data);
 		}
+
+		public void Dispose()
+		{
+			
+		}
 	}
 }
